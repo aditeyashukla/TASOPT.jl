@@ -257,7 +257,7 @@
 
     #Tail profile drags:
     lowspeed_cdf = 0.0060
-    lowspeed_cdp = 0.0035
+    lowspeed_cdp = 0.0030
     Re_ref       = 10e6
 
     excrescence_drag_factor = 1.08 # Rivets, sheet breaks etc
@@ -266,8 +266,8 @@
         AR_Htail = 5.8
         taper = 0.25
         sweep = 25.0 #typically can be set to be the same as the wings
-        center_box_halfspan = "2.0 ft"
-        x_Htail = "114.5 ft"
+        #center_box_halfspan = "2.0 ft"
+        x_Htail = "115 ft"
         z_Htail = "4 ft"
 
         max_tail_download = -0.5 # = CLh/CLmax. Tail download param at max load case.
@@ -283,7 +283,7 @@
                              # 1: move wing to get CLh="CLhspec" in cruise 
                              # 2: move wing to get min static margin = "SMmin"
 
-        SM_min = 0.05 # Minimum static margin
+        SM_min = 0.15 # Minimum static margin
         CLh_spec = -0.02
 
         downwash_factor = 0.55 #dε/dα
@@ -303,7 +303,7 @@
         AR_Vtail = 2.0
         taper = 0.30
         sweep = 25.0
-        center_box_halfspan = 0.0
+        #center_box_halfspan = 0.0
         x_Vtail = "113 ft"
         number_Vtails = 1.0
 
@@ -317,7 +317,7 @@
         added_weight_fraction = 0.40 # e.g. ribs, LE, rudder, attachments
 
         box_width_chord = 0.50
-        box_height_chord = 0.14 
+        box_height_chord = 0.12
         web_height_hbox  = 0.75
 
 [Structures]
