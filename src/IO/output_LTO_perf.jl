@@ -79,7 +79,7 @@ Uses a third order polynomial in T₃
 Assumes a default specific humidity of 0.00634 kg water/kg dry air per 
 ICAO Annex 16 Vol. II (part 2.1.4.1)
 """
-function EINOx3(P3_kPa, T3_K, sp_humidity = 0.00634, ac_type = "1")
+function EINOx3(P3_kPa, T3_K, sp_humidity = 0.00634, ac_type = :narrow)
     # Constants derived using a CRN model for a CFM56 tech level engine
         
     if ac_type == :wide
@@ -108,7 +108,7 @@ Uses a fourth order polynomial which behaves a little better at low T₃ than th
 Assumes a default specific humidity of 0.00634 kg water/kg dry air per 
 ICAO Annex 16 Vol. II (part 2.1.4.1)
 """
-function EINOx4(P3_kPa, T3_K, sp_humidity = 0.00634, ac_type = "1")
+function EINOx4(P3_kPa, T3_K, sp_humidity = 0.00634, ac_type = :narrow)
     if ac_type == :wide
         a = 9.15868718e-10
         b = -2.60435361e-06

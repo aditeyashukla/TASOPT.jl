@@ -222,12 +222,17 @@ function odperf!(ac, W, FL, Ldebug)
 
             icall = 1
             icool = 1
-            initeng = true
+            initeng = false
             ac.pared[ieTt41,ip] = Tt41s[i]
             ac.parad[iaalt,ip] = alts[i]
-
-            TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
-                                        view(ac.pared, :, ip), ac.wing, ip, icall, icool, initeng)
+            try
+                TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
+                                            view(ac.pared, :, ip), ac.wing, ip, icall, icool, initeng)
+            catch
+                println("Trying initeng=true")
+                TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
+                                            view(ac.pared, :, ip), ac.wing, ip, icall, icool, true)
+            end
 
             mdotf[i] = ac.pared[ieff, iptest] * ac.pared[iemcore]     
             EINOx1 = EINOx(ac, iptest; method=method)
@@ -359,12 +364,17 @@ function odperf!(ac, W, FL, Ldebug)
 
             icall = 1
             icool = 1
-            initeng = true
+            initeng = false
             ac.pared[ieTt41,ip] = Tt41s[i]
             ac.parad[iaalt,ip] = alts[i]
-
-            TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
-                                        view(ac.pared, :, ip), ac.wing, ip, icall, icool, initeng)
+            try
+                TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
+                                            view(ac.pared, :, ip), ac.wing, ip, icall, icool, initeng)
+            catch
+                println("Trying initeng=true")
+                TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
+                                            view(ac.pared, :, ip), ac.wing, ip, icall, icool, true)
+            end
 
             Ftotal = ac.pared[ieFe, iptest] * ac.parg[igneng]
             FFmaxcrz[i] = ac.pared[ieff, iptest] * ac.pared[iemcore]     
@@ -384,10 +394,17 @@ function odperf!(ac, W, FL, Ldebug)
 
             icall = 2
             icool = 1
-            initeng = true
+            initeng = false
             ac.pared[ieFe, ip] = F
-            TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
-                                        view(ac.pared, :, ip), ac.wing, ip, icall, icool, initeng)
+            try
+                TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
+                                            view(ac.pared, :, ip), ac.wing, ip, icall, icool, initeng)
+            catch
+                println("Trying initeng=true")
+                TASOPT.tfcalc!(ac.pari, ac.parg, view(ac.parad, :, ip), 
+                                            view(ac.pared, :, ip), ac.wing, ip, icall, icool, true)
+            end
+
             
             Ftotal = ac.pared[ieFe, iptest] * ac.parg[igneng]
             crzmdotf[i] = ac.pared[ieff, iptest] * ac.pared[iemcore]     

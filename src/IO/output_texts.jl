@@ -183,3 +183,48 @@ function geometry(ac::aircraft; io = stdout)
 
 
 end
+
+"""
+`engine` prints out the engine params for the aircraft
+"""
+function engine_info(ac::aircraft; io=stdout)
+    parg = ac.parg
+    fuselage = ac.fuselage
+    wing = ac.wing
+    htail = ac.htail
+    vtail = ac.vtail
+    
+    P3_kPa = ac.pared[iept3, ipcruise1]./1000.0
+    T3_K   = ac.pared[ieTt3, ipcruise1]
+    P3_kPa_rotate = ac.pared[iept3, iprotate]./1000.0
+    T3_K_rotate   = ac.pared[ieTt3, iprotate]
+    t4_CR = ac.pared[ieTt4, ipcruise1]
+    OPR = ac.pared[iepilc,ipcruise1].*ac.pared[iepihc,ipcruise1]
+    PIHC = ac.pared[iepihc,ipcruise1]
+    PILC = ac.pared[iepilc,ipcruise1]
+    BPR = ac.pared[ieBPR, ipcruise1]
+    FPR = ac.pared[iepif, ipcruise1]
+    PFEI = ac.parm[imPFEI]
+    EINOx_cruise = (TASOPT.EINOx(ac,ipcruise1)+TASOPT.EINOx(ac,ipcruise2))/2
+    fan_diam = ac.parg[igdfan]
+    F_total = ac.pared[ieFe, ipstatic]
+    TSFC = ac.pared[ieTSFC,ipstatic]*3600
+
+    printstyled(io, "ENGINE:\n -------------- \n", color=:bold )
+    @printf(io, "P3  = %6.5f kPa\n", P3_kPa)
+    @printf(io, "Tt3  = %6.5f K\n", T3_K)
+    @printf(io, "P3_rotate  = %6.5f kPa\n", P3_kPa_rotate)
+    @printf(io, "Tt3_rotate  = %6.5f K\n", T3_K_rotate)
+    @printf(io, "Tt4  = %6.5f K\n", t4_CR)
+    @printf(io, "OPR  = %6.5f \n", OPR)
+    @printf(io, "HPC_PR  = %6.5f \n", PIHC)
+    @printf(io, "LPC_PR  = %6.5f \n", PILC)
+    @printf(io, "BPR  = %6.5f \n", BPR)
+    @printf(io, "FPR  = %6.5f \n", FPR)
+    @printf(io, "EI_NOX_Cruise  = %6.5f \n", EINOx_cruise)
+    @printf(io, "PFEI  = %6.5f \n", PFEI)
+    @printf(io, "Fan_Diameter   = %6.5f \n", fan_diam)
+    @printf(io, "Thrust   = %6.5f \n", F_total)
+    @printf(io, "TSFC   = %6.5f \n", TSFC)
+    @printf(io,"--------------------\n")
+end
