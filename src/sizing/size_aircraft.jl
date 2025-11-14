@@ -358,6 +358,7 @@ function _size_aircraft!(ac; itermax=35,
     @inbounds for iterw = 1:itermax
         if iterw == itermax
             @warn "Reached max iterations in weight sizing loop!"
+            error("Failing for opti")
         end
 
         # Set relaxation factor
@@ -884,6 +885,7 @@ function _size_aircraft!(ac; itermax=35,
     #Check if all engine points have converged
     if check_engine_convergence_failure(pare)
         @warn "Some engine points did not converge"
+        error("Failing for opti")
     end
     #Warn user if HX effectiveness is overwritten
     check_HX_overwriting(eng.heat_exchangers) 

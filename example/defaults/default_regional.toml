@@ -102,6 +102,11 @@
     cruise_mach = 0.80
     cruise_CL   = 0.52
 
+[Mission.Deviation]
+    deviation_dh = ["0.0 ft"]
+    deviation_dl = ["0.0 nmi"]
+    deviation_start = ["0.0 nmi"]
+    
 [Mission.Descent]
     descent_angle_top-of-descent = "-2.5 deg"
     descent_angle_bottom-of-descent = "-3.0 deg"
