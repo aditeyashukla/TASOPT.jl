@@ -294,7 +294,7 @@ function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true,
         takeoff!(ac, imission=imission, printTO=printTO)
     end
 
-return 
+return Lconv
 end
 
 """

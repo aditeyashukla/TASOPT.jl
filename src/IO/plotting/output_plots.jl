@@ -356,7 +356,7 @@ function stickfig(ac::aircraft; plot_obj = nothing, label_fs = 16,
             plot!(plot_obj, xt[m,:], -yt[m,:], color=:black, lw=1.5, z_order=10)
             
             # Filled area between tank outline
-            plot!(xt[m, :], yt[m, :], fill_between=(-yt[m, :], yt[m, :]), color=:red, alpha=0.1)
+            plot!(plot_obj, xt[m, :], yt[m, :], fill_between=(-yt[m, :], yt[m, :]), color=:red, alpha=0.1)
             
             # Fuel name
             fuelname = ""
@@ -1068,38 +1068,43 @@ Function to plot a payload range diagram for an aircraft
     - `itermax::Int64`: Max Iterations for fly_mission! loop (Optional).
     - `initializes_engine::Bool`: Use design case as initial guess for engine state if true (Optional)
     - `specifying_cruise::String`: option for whether cruise altitude or lift coefficient is specified. Options are "altitude" or "lift_coefficient"
+    - `printTO::Bool`: Whether to print takeoff convergence tables during the sweep. false by default (Optional).
     - `Ldebug::Bool`: verbosity flag. false by default, hiding outputs as PR sweeps progress (Optional).
 """
-function PayloadRange(ac_og::TASOPT.aircraft; 
-    Rpts::Integer = 20, Ppts::Integer = 21, plots_OEW::Bool = false,
-    filename::String = "", 
-    itermax::Int64 = 35, initializes_engine::Bool = true, opt_prescribed_cruise_parameter = "CL",
+function payload_range_data(ac_og::TASOPT.aircraft; 
+    Rpts::Integer = 20, Ppts::Integer = 21,
+    itermax::Int64 = 35, initializes_engine::Bool = true,
+    opt_prescribed_cruise_parameter = "CL", printTO::Bool = false,
     Ldebug::Bool = false)
 
     if !ac_og.is_sized[1]
         error("Aircraft $(ac_og.name) not sized. Please size aircraft before calling `PayloadRange()`.")
     end
+    Rpts >= 2 || throw(ArgumentError("Rpts must be at least 2."))
+    Ppts >= 2 || throw(ArgumentError("Ppts must be at least 2."))
 
-    #Duplicate design mission as second aircraft, which will be modified
-    parm = cat(ac_og.parm[:,1], ac_og.parm[:,1], dims=2)
-    pare = cat(ac_og.pare[:,:,1], ac_og.pare[:,:,1], dims=3)
-    para = cat(ac_og.para[:,:,1], ac_og.para[:,:,1], dims=3)
-    ac = aircraft(ac_og.name, ac_og.description,
-    ac_og.options, ac_og.parg, parm, para, pare, [true], 
-    ac_og.fuselage, ac_og.fuse_tank, ac_og.wing, ac_og.htail, ac_og.vtail, ac_og.engine, ac_og.landing_gear)
+    # Work on a full copy. The off-design mission solve mutates mission, engine,
+    # tank, and component state; plotting must not alter the sized design object.
+    ac = deepcopy(ac_og)
+    ac.parm = cat(copy(ac_og.parm[:,1]), copy(ac_og.parm[:,1]), dims=2)
+    ac.pare = cat(copy(ac_og.pare[:,:,1]), copy(ac_og.pare[:,:,1]), dims=3)
+    ac.para = cat(copy(ac_og.para[:,:,1]), copy(ac_og.para[:,:,1]), dims=3)
+    ac.is_sized = [true]
 
     for HX in ac.engine.heat_exchangers
         HX.HXgas_mission = cat(HX.HXgas_mission[:,1], HX.HXgas_mission[:,1], dims=2)
     end
+
     #Extract aircraft parameters
     Wmax = ac.parg[igWMTO]
     Fuelmax = ac.parg[igWfmax]
     Wempty = ac.parg[igWMTO] - ac.parg[igWfuel] - ac.parg[igWpay]
-    PFEI = 0.0
 
-    RangesToPlot = []
-    PayloadToPlot = []
-    PFEIsToPlot = []
+    RangesToPlot = Float64[]
+    PayloadToPlot = Float64[]
+    PFEIsToPlot = Float64[]
+    FuelToPlot = Float64[]
+    WTOToPlot = Float64[]
     maxPay = ac.parg[igWpaymax]
     Wpax = ac.parm[imWperpax, 1]
     sizingWpay = ac.parm[imWpay, 1] #sizing payload
@@ -1112,9 +1117,15 @@ function PayloadRange(ac_og::TASOPT.aircraft;
             break
         else
             #This ensures design payload is always included
-            Payloads = reverse(sort([(maxPay) * LinRange(0, 1, Ppts - 1); sizingWpay]))
+            Payloads = reverse(unique(sort([maxPay * LinRange(0, 1, Ppts - 1); min(sizingWpay, maxPay)])))
         end
         ac.parm[imRange,2] = Range
+        found_feasible = false
+        feasible_pay = NaN
+        feasible_fuel = NaN
+        feasible_WTO = NaN
+        feasible_PFEI = NaN
+
         for mWpay = Payloads
             if Ldebug println("Checking for Range (nmi): ", convertDist(Range, "m", "nmi"), " and Pax = ", mWpay/convertForce(Wpax, "N", "lbf")) end
             #reset the aircraft to the design altitude and cruise CL since one is changed during fly_mission!() per opt_prescribed_cruise_parameter
@@ -1123,46 +1134,82 @@ function PayloadRange(ac_og::TASOPT.aircraft;
             
             ac.parm[imWpay,2] = mWpay
             try
-                fly_mission!(ac, 2; itermax = itermax, initializes_engine = initializes_engine, opt_prescribed_cruise_parameter = opt_prescribed_cruise_parameter)
-                # fly_mission! success: store maxPay, break loop
+                converged = fly_mission!(ac, 2;
+                    itermax = itermax,
+                    initializes_engine = initializes_engine,
+                    opt_prescribed_cruise_parameter = opt_prescribed_cruise_parameter,
+                    printTO = printTO)
+                if !converged
+                    if Ldebug println("Mission did not converge - moving to lower payload...") end
+                    continue
+                end
+
+                # fly_mission! success: check aircraft limits
                 mWfuel = ac.parm[imWfuel,2]
                 WTO = Wempty + mWpay + mWfuel
 
                 # if weights are negative or above their max, point is infeasible
                 if ((WTO - Wmax) > tolweight) || ((mWfuel - Fuelmax) > tolweight) || (WTO < 0.0) || (mWfuel < 0.0)
-                    WTO = 0.0
-                    mWfuel = 0.0
-
                     if Ldebug println("Max out error!") end
-
-                    if mWpay == 0
-                        if Ldebug println("Payload 0 and no convergence found") end
-                        
-                        maxPay = 0
-                    end
                 else
-                    maxPay = mWpay
-                    PFEI = ac.parm[imPFEI, 2]
+                    feasible_pay = mWpay
+                    feasible_fuel = mWfuel
+                    feasible_WTO = WTO
+                    feasible_PFEI = iszero(mWpay) ? NaN : ac.parm[imPFEI, 2]
+                    found_feasible = true
                     if Ldebug println("Converged - moving to next range...") end
                     
                     break
                 end     
-            catch
-                if Ldebug println("Not Converged - moving to lower payload...") end
+            catch err
+                if Ldebug
+                    println("Mission failed ($(typeof(err))) - moving to lower payload...")
+                end
             end
         end
-        append!(RangesToPlot, Range)
-        append!(PFEIsToPlot, PFEI)
-        if plots_OEW
-            append!(PayloadToPlot, maxPay+Wempty)
+
+        if found_feasible
+            maxPay = feasible_pay
+            push!(RangesToPlot, Range)
+            push!(PayloadToPlot, feasible_pay)
+            push!(PFEIsToPlot, feasible_PFEI)
+            push!(FuelToPlot, feasible_fuel)
+            push!(WTOToPlot, feasible_WTO)
         else
-            append!(PayloadToPlot, maxPay)
+            if Ldebug println("No feasible payload found at this range; ending payload-range sweep.") end
+            break
         end
     end
 
+    return (range = RangesToPlot,
+            payload = PayloadToPlot,
+            pfei = PFEIsToPlot,
+            fuel = FuelToPlot,
+            WTO = WTOToPlot,
+            Wempty = Wempty,
+            Wmax = Wmax,
+            Fuelmax = Fuelmax)
+end
+
+function PayloadRange(ac_og::TASOPT.aircraft; 
+    Rpts::Integer = 20, Ppts::Integer = 21, plots_OEW::Bool = false,
+    filename::String = "", 
+    itermax::Int64 = 35, initializes_engine::Bool = true, opt_prescribed_cruise_parameter = "CL",
+    printTO::Bool = false, Ldebug::Bool = false)
+
+    pr = payload_range_data(ac_og;
+        Rpts = Rpts,
+        Ppts = Ppts,
+        itermax = itermax,
+        initializes_engine = initializes_engine,
+        opt_prescribed_cruise_parameter = opt_prescribed_cruise_parameter,
+        printTO = printTO,
+        Ldebug = Ldebug)
+
     # Convert values for plotting
-    ranges_nmi = convertDist.(RangesToPlot, "m", "nmi")
-    payload_tons = PayloadToPlot ./ (9.81 * 1000)
+    ranges_nmi = convertDist.(pr.range, "m", "nmi")
+    payload_y = plots_OEW ? pr.payload .+ pr.Wempty : pr.payload
+    payload_tons = payload_y ./ (gee * 1000)
 
     # Standard PR Diagram
     plot1 = plot(ranges_nmi, payload_tons, 
@@ -1171,7 +1218,7 @@ function PayloadRange(ac_og::TASOPT.aircraft;
         color=:blue,            # Line color
         xlabel="Range (nmi)", 
         ylabel= plots_OEW ? "OEW + Payload Weight (tonnes)" : "Payload Weight (tonnes)",
-        title="Payload-Range Diagram: "*string(ac.name), 
+        title="Payload-Range Diagram: "*string(ac_og.name), 
         grid=true,              # Enable grid
         dpi = 300,
         margin=4mm,
@@ -1180,19 +1227,19 @@ function PayloadRange(ac_og::TASOPT.aircraft;
 
     # Add the design point to plot1
     design_range = convertDist.(ac_og.parm[imRange,1], "m", "nmi")
-    design_payload = (plots_OEW ? ac_og.parm[imWpay, 1] + Wempty : ac_og.parm[imWpay, 1]) / (9.81 * 1000)
+    design_payload = (plots_OEW ? ac_og.parm[imWpay, 1] + pr.Wempty : ac_og.parm[imWpay, 1]) / (gee * 1000)
     scatter!(plot1, [design_range], [design_payload], 
              color=:blue, marker=:star5, ms=8, label="Design Point",
              legend=:bottomleft)
 
     # PFEI plot
-    plot2 = plot(ranges_nmi, PFEIsToPlot, 
+    plot2 = plot(ranges_nmi, pr.pfei, 
         lw=2,                   # Line width
         line=:solid,            # Line style
         color=:green,            # Line color
         xlabel="Range (nmi)", 
         ylabel="PFEI at max payload (kJ/kg-km)", 
-        title="Payload-Range Diagram: "*string(ac.name), 
+        title="Payload-Range Diagram: "*string(ac_og.name), 
         grid=true,              # Enable grid
         dpi = 300,
         margin=4mm,
@@ -1383,4 +1430,3 @@ function plot_airf(ac::aircraft)
     airfoil = ac.wing.airsection
     return plot_airf(airfoil)
 end
-
