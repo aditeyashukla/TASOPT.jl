@@ -146,7 +146,7 @@ The gas routines are described in [Gas Calculations](@ref)
     - 7: fan nozzle
     - 8: fan flow downstream
 """
-function tfoper!(gee, M0, T0, p0, a0, Tref, pref,
+function tfoper_uncached!(gee, M0, T0, p0, a0, Tref, pref,
       Phiinl, Kinl, eng_has_BLI_cores,
       pid, pib, pifn, pitn,
       Gearf,
@@ -3255,3 +3255,77 @@ function tfoper!(gee, M0, T0, p0, a0, Tref, pref,
 end # tfoper
 
 
+
+# Exact per-candidate engine cache. Both mutated cooling arrays and the RNG
+# post-state are restored; unsuccessful solves are never cached.
+const FUEL_ENGINE_KEY_TYPE = Tuple{Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Bool,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,CalcMode.T,Float64,Int,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,CoolingOpt.T,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Int,Int,NTuple{4,Float64},NTuple{4,Float64},Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64}
+const FUEL_ENGINE_RESULT_TYPE = Tuple{Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Float64,Bool}
+struct FuelEngineRecord
+ value::FUEL_ENGINE_RESULT_TYPE
+ epsrow::NTuple{4,Float64}
+ Tmrow::NTuple{4,Float64}
+ rng::Random.Xoshiro
+end
+struct FuelEngineKey
+    values::FUEL_ENGINE_KEY_TYPE
+    fingerprint::UInt
+end
+@generated function fuel_engine_key_hash(values::FUEL_ENGINE_KEY_TYPE)
+    expression=:(UInt(0x19f9cb45a364d277))
+    for i in reverse(1:fieldcount(FUEL_ENGINE_KEY_TYPE))
+        expression=:(hash(getfield(values,$i),$expression))
+    end
+    expression
+end
+FuelEngineKey(values::FUEL_ENGINE_KEY_TYPE)=FuelEngineKey(values,fuel_engine_key_hash(values))
+Base.hash(key::FuelEngineKey,seed::UInt)=hash(key.fingerprint,seed)
+@generated function Base.isequal(a::FuelEngineKey,b::FuelEngineKey)
+    checks=[:(isequal(getfield(a.values,$i),getfield(b.values,$i))) for i in 1:fieldcount(FUEL_ENGINE_KEY_TYPE)]
+    reduce((a,b)->:($a && $b),checks)
+end
+
+const FUEL_ENGINE_EXACT_CACHE = Dict{FuelEngineKey,FuelEngineRecord}()
+const FUEL_ENGINE_CACHE_COUNTS = zeros(Int,2)
+function tfoper!(gee, M0, T0, p0, a0, Tref, pref,
+      Phiinl, Kinl, eng_has_BLI_cores,
+      pid, pib, pifn, pitn,
+      Gearf,
+      pifD, pilcD, pihcD, pihtD, piltD,
+      mbfD, mblcD, mbhcD, mbhtD, mbltD,
+      NbfD, NblcD, NbhcD, NbhtD, NbltD,
+      A2, A25, A5, A7,
+      opt_calc_call,
+      Ttf, ifuel, hvap, etab,
+      epf0, eplc0, ephc0, epht0, eplt0,
+      mofft, Pofft,
+      Tt9, pt9,
+      epsl, epsh,
+      opt_cooling,
+      Mtexit, dTstrk, StA, efilm, tfilm,
+      fc0, epht_fc,
+      M4a, ruc,
+      ncrowx, ncrow,
+      epsrow, Tmrow,
+      Feng,
+      M2, pif, pilc, pihc, mbf, mblc, mbhc, Tt4, pt5, mcore, M25, 
+      Δh_PreC, Δh_InterC, Δh_Regen, Δh_TurbC,
+      Δp_PreC, Δp_InterC, Δp_Regen)
+    (length(epsrow)==4 && length(Tmrow)==4) || return tfoper_uncached!(gee,M0,T0,p0,a0,Tref,pref,Phiinl,Kinl,eng_has_BLI_cores,pid,pib,pifn,pitn,Gearf,pifD,pilcD,pihcD,pihtD,piltD,mbfD,mblcD,mbhcD,mbhtD,mbltD,NbfD,NblcD,NbhcD,NbhtD,NbltD,A2,A25,A5,A7,opt_calc_call,Ttf,ifuel,hvap,etab,epf0,eplc0,ephc0,epht0,eplt0,mofft,Pofft,Tt9,pt9,epsl,epsh,opt_cooling,Mtexit,dTstrk,StA,efilm,tfilm,fc0,epht_fc,M4a,ruc,ncrowx,ncrow,epsrow,Tmrow,Feng,M2,pif,pilc,pihc,mbf,mblc,mbhc,Tt4,pt5,mcore,M25,Δh_PreC,Δh_InterC,Δh_Regen,Δh_TurbC,Δp_PreC,Δp_InterC,Δp_Regen)
+    key=(gee,M0,T0,p0,a0,Tref,pref,Phiinl,Kinl,eng_has_BLI_cores,pid,pib,pifn,pitn,Gearf,pifD,pilcD,pihcD,pihtD,piltD,mbfD,mblcD,mbhcD,mbhtD,mbltD,NbfD,NblcD,NbhcD,NbhtD,NbltD,A2,A25,A5,A7,opt_calc_call,Ttf,ifuel,hvap,etab,epf0,eplc0,ephc0,epht0,eplt0,mofft,Pofft,Tt9,pt9,epsl,epsh,opt_cooling,Mtexit,dTstrk,StA,efilm,tfilm,fc0,epht_fc,M4a,ruc,ncrowx,ncrow,(epsrow[1],epsrow[2],epsrow[3],epsrow[4]),(Tmrow[1],Tmrow[2],Tmrow[3],Tmrow[4]),Feng,M2,pif,pilc,pihc,mbf,mblc,mbhc,Tt4,pt5,mcore,M25,Δh_PreC,Δh_InterC,Δh_Regen,Δh_TurbC,Δp_PreC,Δp_InterC,Δp_Regen)
+    key isa FUEL_ENGINE_KEY_TYPE || return tfoper_uncached!(gee,M0,T0,p0,a0,Tref,pref,Phiinl,Kinl,eng_has_BLI_cores,pid,pib,pifn,pitn,Gearf,pifD,pilcD,pihcD,pihtD,piltD,mbfD,mblcD,mbhcD,mbhtD,mbltD,NbfD,NblcD,NbhcD,NbhtD,NbltD,A2,A25,A5,A7,opt_calc_call,Ttf,ifuel,hvap,etab,epf0,eplc0,ephc0,epht0,eplt0,mofft,Pofft,Tt9,pt9,epsl,epsh,opt_cooling,Mtexit,dTstrk,StA,efilm,tfilm,fc0,epht_fc,M4a,ruc,ncrowx,ncrow,epsrow,Tmrow,Feng,M2,pif,pilc,pihc,mbf,mblc,mbhc,Tt4,pt5,mcore,M25,Δh_PreC,Δh_InterC,Δh_Regen,Δh_TurbC,Δp_PreC,Δp_InterC,Δp_Regen)
+    cache_key=FuelEngineKey(key)
+    cached=get(FUEL_ENGINE_EXACT_CACHE,cache_key,nothing)
+    if cached!==nothing
+        FUEL_ENGINE_CACHE_COUNTS[1]+=1
+        epsrow .= cached.epsrow; Tmrow .= cached.Tmrow
+        copy!(Random.default_rng(),cached.rng)
+        return cached.value
+    end
+    FUEL_ENGINE_CACHE_COUNTS[2]+=1
+    value=tfoper_uncached!(gee,M0,T0,p0,a0,Tref,pref,Phiinl,Kinl,eng_has_BLI_cores,pid,pib,pifn,pitn,Gearf,pifD,pilcD,pihcD,pihtD,piltD,mbfD,mblcD,mbhcD,mbhtD,mbltD,NbfD,NblcD,NbhcD,NbhtD,NbltD,A2,A25,A5,A7,opt_calc_call,Ttf,ifuel,hvap,etab,epf0,eplc0,ephc0,epht0,eplt0,mofft,Pofft,Tt9,pt9,epsl,epsh,opt_cooling,Mtexit,dTstrk,StA,efilm,tfilm,fc0,epht_fc,M4a,ruc,ncrowx,ncrow,epsrow,Tmrow,Feng,M2,pif,pilc,pihc,mbf,mblc,mbhc,Tt4,pt5,mcore,M25,Δh_PreC,Δh_InterC,Δh_Regen,Δh_TurbC,Δp_PreC,Δp_InterC,Δp_Regen)
+    if value isa FUEL_ENGINE_RESULT_TYPE && last(value)===true
+        length(FUEL_ENGINE_EXACT_CACHE)>=4096 && empty!(FUEL_ENGINE_EXACT_CACHE)
+        FUEL_ENGINE_EXACT_CACHE[cache_key]=FuelEngineRecord(value, (epsrow[1],epsrow[2],epsrow[3],epsrow[4]), (Tmrow[1],Tmrow[2],Tmrow[3],Tmrow[4]), copy(Random.default_rng()))
+    end
+    value
+end

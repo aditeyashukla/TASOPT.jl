@@ -11,7 +11,7 @@ using ..materials
 using NLsolve
 using Roots
 using NLopt
-using OrdinaryDiffEq
+using DifferentialEquations
 using StaticArrays
 
 import ..TASOPT: __TASOPTindices__, __TASOPTroot__, compare_strings, FuelType

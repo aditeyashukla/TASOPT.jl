@@ -186,9 +186,7 @@ function aircraft_drag!(ac, imission::Int, ip::Int, computes_wing_direct::Bool; 
 
 #---- set Mnac on outside of nacelle, using vortex sheet model of nacelle,
 #-     (Mnac+M2)/2 = Mach*rVnace
-      rVnLE = max( 2.0*rVnace - pare[ieM2] / max(Mach,0.001) , 0.0 )
-      rVnsurf3 = 0.25*(rVnLE+rVnace)*(rVnLE^2+rVnace^2)
-      CDnace = fSnace * Cfnace * rVnsurf3
+      CDnace = nacelle_drag_at_fixed_state(parg, para, pare)
       para[iaCDnace] = CDnace
 
 #- - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -252,3 +250,23 @@ function cfturb(Re)
       return cfturb
 end # cfturb
 
+
+# At a fixed aerodynamic state, ieM2 is the only engine output read by
+# aircraft_drag!. Reuse all other drag components during engine coupling.
+function nacelle_drag_at_fixed_state(parg,para,pare)
+    rVnace=parg[igrVnace]
+    rVnLE=max(2.0*rVnace-pare[ieM2]/max(para[iaMach],0.001),0.0)
+    rVnsurf3=0.25*(rVnLE+rVnace)*(rVnLE^2+rVnace^2)
+    parg[igfSnace]*para[iaCfnace]*rVnsurf3
+end
+
+"""Refresh only M2-dependent drag; altitude, Mach, Reynolds, lift and trim
+must be unchanged since the last complete aircraft_drag! evaluation."""
+function refresh_nacelle_drag!(ac,imission::Int,ip::Int)
+    para=view(ac.para,:,ip,imission);pare=view(ac.pare,:,ip,imission)
+    previous=para[iaCDnace]
+    updated=nacelle_drag_at_fixed_state(ac.parg,para,pare)
+    para[iaCDnace]=updated
+    para[iaCD]+=updated-previous
+    nothing
+end

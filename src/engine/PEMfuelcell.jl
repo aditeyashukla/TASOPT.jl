@@ -1,4 +1,4 @@
-using OrdinaryDiffEq
+using DifferentialEquations
 
 """
     LT_PEMFC_voltage_simple(j, T, p_H2, p_air)
@@ -1132,8 +1132,3 @@ function PEMstackweight(gee, u, n_cells, A_cell, fouter)
 
     return W_stack
 end #PEMstackweight
-                                                            
-function dy_dx(y, params, x)
-    u, p = params
-    return [dλ_dz_membrane(y[1], p[1], p[2])]
-end

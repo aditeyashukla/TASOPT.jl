@@ -456,6 +456,10 @@ function size_htail(ac, paraF, paraB, paraC; Ldebug::Bool = false)
       xWF, xWB, xWc = 0.0, 0.0, 0.0
       WF, WB, Wc = 0.0, 0.0, 0.0
       dmax = 0.0
+      # Keep the final Newton update available to convergence diagnostics even
+      # when an exceptional/degenerate branch prevents the first assignment.
+      dSh = 0.0
+      dxw = 0.0
 
       @inbounds for iter = 1:itmax
 
@@ -652,7 +656,8 @@ function size_htail(ac, paraF, paraB, paraC; Ldebug::Bool = false)
 
       end #end for loop iter
       if (dmax > toler)
-            @warn "`size_htail()`: Pitch not converged. dxwbox,dSh = $dxw, $dSh"
+            @warn "`size_htail()`: pitch iteration did not converge" dxwbox = dxw dSh dmax toler
+            error("size_htail pitch iteration did not converge (dmax=$(dmax), tolerance=$(toler))")
       end
 
 

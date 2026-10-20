@@ -13,6 +13,7 @@ using Printf
 using StaticArrays
 
 using Dates
+using Distributed
 using ForwardDiff
 using CSV, Tables
 using DocStringExtensions
@@ -51,8 +52,11 @@ include(joinpath(__TASOPTroot__,"utils/aircraft_utils.jl"))
 include(joinpath(__TASOPTroot__,"atmos/atmos.jl"))
 include(joinpath(__TASOPTroot__,"sizing/initialize_weights.jl"))
 include(joinpath(__TASOPTroot__,"sizing/size_aircraft.jl"))
+include(joinpath(__TASOPTroot__,"mission/segment_integration.jl"))
 include(joinpath(__TASOPTroot__,"mission/mission_iteration.jl"))
 include(joinpath(__TASOPTroot__,"mission/fly_mission.jl"))
+include(joinpath(__TASOPTroot__,"mission/fuel_matrix.jl"))
+export avoidance_fuel_matrix
 include(joinpath(__TASOPTroot__,"mission/takeoff.jl"))
 include(joinpath(__TASOPTroot__,"balance/balance.jl"))
 export balance_aircraft!
@@ -84,8 +88,10 @@ using .CryoTank
 
 # Off-design performance via BADA file like output
 #  and LTO output for EDB points for use in AEIC
+include(joinpath(__TASOPTroot__,"mission/fly_mission_parallel.jl"))
 include(joinpath(__TASOPTroot__,"mission/odperformance.jl"))
-export fly_mission!
+export fly_mission!, fly_mission_parallel!, fly_mission_paralell!,
+       size_aircraft_and_fly_missions_parallel!
 include(joinpath(__TASOPTroot__,"mission/AircraftDeck.jl"))
 
 # Input and output functions
@@ -101,11 +107,14 @@ include(joinpath(__TASOPTroot__,"IO/save_model.jl"))
 include(joinpath(__TASOPTroot__,"IO/quicksave_load.jl"))
 include(joinpath(__TASOPTroot__,"IO/par_array_opers.jl"))
 include(joinpath(__TASOPTroot__,"IO/output_csv.jl"))
+include(joinpath(__TASOPTroot__,"IO/output_LTO_perf.jl"))
 
 include(joinpath(__TASOPTroot__,"cost/cost_est.jl"))
 include(joinpath(__TASOPTroot__,"cost/cost_val.jl"))
 include(joinpath(__TASOPTroot__,"utils/printBADA.jl"))
 include(joinpath(__TASOPTroot__,"utils/sensitivity.jl"))
+include(joinpath(__TASOPTroot__,"optimization/aircraft_optimization.jl"))
+include(joinpath(__TASOPTroot__,"optimization/aircraft_optimization_ipopt.jl"))
 
 export size_aircraft!
 

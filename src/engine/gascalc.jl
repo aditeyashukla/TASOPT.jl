@@ -39,7 +39,7 @@ function gas_tset(alpha, n, hspec, tguess)
 
             t = t + dt
       end
-      println("gas_tset: convergence failed.  dT =", dt)
+      error("gas_tset: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_tset
 
@@ -93,7 +93,7 @@ function gas_tsetd(alpha, n, hspec, tguess)
 
             t = t + dt
       end
-      println("gas_tsetd: convergence failed.  dT =", dt)
+      error("gas_tsetd: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_tsetd
 
@@ -177,8 +177,8 @@ function gassumd(alpha, n, t)
       dt = 0.01
       cp_t = 0.0
       for i = 1:n
-            si, s_ti, hi, h_ti, cpi1, ri = gasfun(i, t - dt)
-            si, s_ti, hi, h_ti, cpi2, ri = gasfun(i, t + dt)
+            cpi1 = gas_cp_exact(i, t - dt)
+            cpi2 = gas_cp_exact(i, t + dt)
             cp_ti = (cpi2 - cpi1) * 0.5 / dt
             cp_t = cp_t + cp_ti * alpha[i]
       end
@@ -248,8 +248,7 @@ function gas_prat(alpha, n, po, to, ho, so, cpo, ro, pratio, epol)
             t = t + dt
       end
 
-      println("gas_prat: convergence failed.  dT =", dt)
-      println("To pratio ='", To, pratio)
+      error("gas_prat: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_prat
 
@@ -372,8 +371,7 @@ function gas_pratd(alpha, n, po, to, ho, so, cpo, ro, pratio, epol)
             end
 
       end
-      println("gas_pratd: convergence failed.  dT =", dt)
-      println("To pratio =", to, pratio)
+      error("gas_pratd: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_pratd
 
@@ -435,7 +433,7 @@ function gas_delh(alpha, n, po, to, ho, so, cpo, ro, delh, epol)
 
             t = t + dt
       end
-      println("gas_delh: convergence failed.  dT =", dt)
+      error("gas_delh: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_delh
 
@@ -564,7 +562,7 @@ function gas_delhd(alpha, n, po, to, ho, so, cpo, ro, delh, epol)
             end
 
       end
-      println("gas_delh: convergence failed.  dT =", dt)
+      error("gas_delhd: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_delhd
 
@@ -763,7 +761,7 @@ function gas_mach(alpha, n, po, to, ho, so, cpo, ro, mo, m, epol)
 
             t = t + dt
       end
-      println("gas_mach: convergence failed.  dT =", dt)
+      error("gas_mach: temperature iteration did not converge; dT=$(dt)")
 
 
 end # gas_mach
@@ -904,7 +902,7 @@ function gas_machd(alpha, n, po, to, ho, so, cpo, ro, mo, m, epol)
             t = t + dt
       end
 
-      println("gas_mach: convergence failed.  dT =", dt)
+      error("gas_machd: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_machd
 
@@ -970,7 +968,7 @@ function gas_mass(alpha, n, po, to, ho, so, cpo, ro, mflux, Mguess)
 
             t = t + rlx * dt
       end
-      println("gas_mass: convergence failed.  dT =", dt)
+      error("gas_mass: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_mass
 
@@ -1239,6 +1237,6 @@ function gas_tset_single(igas, hspec, tguess)
 
             t = t + dt
       end
-      println("gas_tset_single: convergence failed.  dT =", dt)
+      error("gas_tset_single: temperature iteration did not converge; dT=$(dt)")
 
 end # gas_tset

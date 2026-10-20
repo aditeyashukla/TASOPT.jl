@@ -30,7 +30,7 @@ See also [`_axisymm_BL`](@ref) and [`_axisymm_flow`](@ref).
       In an upcoming revision, an `aircraft` `struct` and auxiliary indices will be passed in lieu of pre-sliced `par` arrays.
 
 """
-function fuselage_drag!(fuse, parm, para, ip)
+function fuselage_drag_uncached!(fuse, parm, para, ip)
       
 #     nc,     # number of control points for fuselage potential-flow problem
 #     nbl,    # number of BL+wake points
@@ -217,4 +217,26 @@ function broadcast_fuselage_drag!(para, ip)
     para[iaDAfsurf, :] .= DAfsurf
     para[iaDAfwake, :] .= DAfwake
     para[iaPAfinf , :] .= PAfinf
+end
+
+# Experimental exact cache. Every input read by fuselage_drag_uncached! is in
+# the key; restore ALL five mutated outputs. No cached aircraft objects.
+const FUEL_FAST_FUSE_CACHE = Dict{Tuple,NTuple{5,Float64}}()
+function fuselage_drag!(fuse, parm, para, ip)
+    f=fuse.layout
+    key=(f.opt_tapers_to,f.x_nose,f.x_end,f.x_start_cylinder,f.x_end_cylinder,
+         f.bubble_center_y_offset,f.radius,f.bubble_lower_downward_shift,
+         f.nose_radius,f.tail_radius,para[iaMach,ip],para[iaalt,ip],
+         parm[imDeltaTatm],para[iafexcdf,ip])
+    if haskey(FUEL_FAST_FUSE_CACHE,key)
+        v=FUEL_FAST_FUSE_CACHE[key]
+        fuse.volume=v[1]
+        para[iaDAfsurf,ip]=v[2];para[iaDAfwake,ip]=v[3]
+        para[iaKAfTE,ip]=v[4];para[iaPAfinf,ip]=v[5]
+    else
+        fuselage_drag_uncached!(fuse,parm,para,ip)
+        length(FUEL_FAST_FUSE_CACHE)>=64 && empty!(FUEL_FAST_FUSE_CACHE)
+        FUEL_FAST_FUSE_CACHE[key]=(fuse.volume,para[iaDAfsurf,ip],para[iaDAfwake,ip],para[iaKAfTE,ip],para[iaPAfinf,ip])
+    end
+    nothing
 end

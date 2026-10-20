@@ -28,7 +28,7 @@ function tfcalc!(wing, engine, parg::Vector{Float64}, para, pare, ip::Int64, ifu
                 println("entering TFCALC", opt_calc_call, opt_cooling, initializes_engine)
         end
 
-        eng_has_BLI_cores = engine.model.has_BLI_cores
+        eng_has_BLI_cores = engine.model.has_BLI_cores::Bool
 
         Gearf = parg[igGearf]
         Tmetal = parg[igTmetal]
@@ -673,9 +673,9 @@ function tfcalc!(wing, engine, parg::Vector{Float64}, para, pare, ip::Int64, ifu
 end # tfcalc
 
 function check_engine_convergence_failure(pare)
-        if sum(pare[ieConvFail, :]) > 0.0 #If any operating point failed to converge
-                warn("Some engine points failed to converge: "*string(pare[ieConvFail,:]))
-        # else
-        #         nothing #All operating points converged
+        has_failure = sum(pare[ieConvFail, :]) > 0.0
+        if has_failure #If any operating point failed to converge
+                error("Some engine points failed to converge: " * string(pare[ieConvFail, :]))
         end
+        return has_failure
 end

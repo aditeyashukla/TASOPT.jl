@@ -15,8 +15,14 @@ Runs the aircraft through the specified mission, computing and converging the fu
 - No explicit outputs. Computed quantities are saved to `par` arrays of `aircraft` model for the mission selected
 
 """
-function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true, 
-        opt_prescribed_cruise_parameter = "altitude", printTO = true)
+function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true,
+        opt_prescribed_cruise_parameter = "altitude", printTO = true,
+        wrlx1 = 0.5, wrlx2 = 0.9, wrlx3 = 0.5,
+        iteration_callback = nothing,
+        maximum_deviation_surrogates::Integer = typemax(Int),
+        allow_deviation_t4_violation::Bool = false,
+        resolve_deviation_boundary::Bool = true,
+        mission_weight_rtol = 1e-8, integration_cache = true, integration_rtol = 1e-7, integration_max_step = 500*nmi_to_m)
     if ~ac.is_sized[1]
         error("Aircraft not sized. Please size the aircraft before running the mission.")
     end
@@ -29,7 +35,8 @@ function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true,
 
     time_propsys = 0.0
 
-    tolerW = 1.0e-8
+    0 < mission_weight_rtol <= 1e-8 || throw(ArgumentError("Invalid mission weight tolerance"))
+    tolerW = mission_weight_rtol
     errw   = 1.0
 
     #Warn user if CL or altitude are being unexpectedly overwritten
@@ -222,6 +229,25 @@ function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true,
 
     resetHXs(pare) #Reset heat exchanger parameters
 
+    requested_deviation_dh = parm[imDeviationDH]
+    requested_deviation_dl = parm[imDeviationDL]
+    requested_deviation_start = parm[imDeviationStart]
+    deviation_requested = abs(requested_deviation_dh) > 1.0e-3 && abs(requested_deviation_dl) > 1.0e-6
+    last_deviation_error = nothing
+    deviation_surrogate_count = 0
+
+    function restore_requested_deviation!()
+        parm[imDeviationDH] = requested_deviation_dh
+        parm[imDeviationDL] = requested_deviation_dl
+        parm[imDeviationStart] = requested_deviation_start
+    end
+
+    function clear_deviation_request!()
+        parm[imDeviationDH] = 0.0
+        parm[imDeviationDL] = 0.0
+        parm[imDeviationStart] = 0.0
+    end
+
 #---- no convergence yet
     Lconv = false
 
@@ -231,13 +257,25 @@ function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true,
   @inbounds for  iterw = 1:itermax
 
     if iterw == itermax
-        println("Reached max iterations in weight sizing loop!")
+        error(
+            "Off-design mission $(imission) weight sizing failed to converge " *
+            "after $(itermax - 1) iterations " *
+            "(relative weight residual=$(errw), WTO=$(parm[imWTO]), " *
+            "deviation_dh=$(requested_deviation_dh), deviation_dl=$(requested_deviation_dl))",
+        )
     end
 
-    rlx = 1.0
-    if (iterw > itermax-5)
-          rlx = 0.5
+    # Match the design sizing loop's fixed-point damping schedule. This factor
+    # used to be computed here but never applied, so difficult off-design
+    # missions could oscillate indefinitely regardless of `itermax`.
+    rlx = if iterw <= 5
+        wrlx1
+    elseif iterw >= 0.75 * itermax
+        wrlx3
+    else
+        wrlx2
     end
+    WTO_previous = parm[imWTO]
 
     # Calculate start-of-cruise altitude or CL from each other by ensuring L=W
     calculate_cruise_altitude_or_CL!(opt_prescribed_cruise_parameter, WMTO, ac, imission)
@@ -249,7 +287,48 @@ function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true,
     end
 
     # Calling mission
-    time_propsys += _mission_iteration!(ac, imission, false, calculate_cruise = true) #Calculate start of cruise too
+    restore_requested_deviation!()
+    used_deviation_surrogate = false
+    try
+        time_propsys += _mission_iteration!(
+            ac, imission, false;
+            calculate_cruise = true,
+            integration_cache=integration_cache, integration_rtol=integration_rtol, integration_max_step=integration_max_step,
+            allow_deviation_t4_violation = allow_deviation_t4_violation ||
+                (resolve_deviation_boundary && deviation_requested),
+        ) #Calculate start of cruise too
+        last_deviation_error = nothing
+    catch err
+        err_msg = sprint(showerror, err)
+        if deviation_requested && err isa ArgumentError && occursin("Deviation infeasible for mission $(imission):", err_msg)
+            last_deviation_error = err
+            deviation_surrogate_count += 1
+            if deviation_surrogate_count > maximum_deviation_surrogates
+                throw(err)
+            end
+            clear_deviation_request!()
+            time_propsys += _mission_iteration!(
+                ac, imission, false;
+                calculate_cruise = true,
+            integration_cache=integration_cache, integration_rtol=integration_rtol, integration_max_step=integration_max_step,
+                allow_deviation_t4_violation = allow_deviation_t4_violation ||
+                (resolve_deviation_boundary && deviation_requested),
+            )
+            used_deviation_surrogate = true
+        else
+            rethrow(err)
+        end
+    finally
+        restore_requested_deviation!()
+    end
+
+    # Under-relax the mission fuel/weight fixed-point update. Keeping Wfuel
+    # consistent with WTO is important because the next mission iteration
+    # reads both values.
+    WTO_raw = parm[imWTO]
+    WTO_relaxed = rlx * WTO_raw + (1.0 - rlx) * WTO_previous
+    parm[imWTO] = WTO_relaxed
+    parm[imWfuel] = WTO_relaxed - Wzero
     # println(parm[imWfuel,:])
 
     #Simulate heat exchanger performance if the engine contains any
@@ -270,12 +349,52 @@ function fly_mission!(ac, imission = 1; itermax = 35, initializes_engine = true,
     errw2 = (WTO - WTO2)/WTO
     errw3 = (WTO - WTO3)/WTO
 
-    errw = max(abs(errw1), abs(errw2), abs(errw3))
+    raw_errw = abs(WTO_raw - WTO_previous) / max(abs(WTO_raw), 1.0)
+    errw = max(abs(errw1), abs(errw2), abs(errw3), raw_errw)
+
+    if !isnothing(iteration_callback)
+        iteration_callback((;
+            iteration = iterw,
+            relaxation = Float64(rlx),
+            WTO_previous = Float64(WTO_previous),
+            WTO_raw = Float64(WTO_raw),
+            WTO_relaxed = Float64(WTO_relaxed),
+            errw1 = Float64(errw1),
+            errw2 = Float64(errw2),
+            errw3 = Float64(errw3),
+            errw = Float64(errw),
+            raw_errw = Float64(raw_errw),
+            used_deviation_surrogate = used_deviation_surrogate,
+            deviation_error = isnothing(last_deviation_error) ? "" :
+                sprint(showerror, last_deviation_error),
+            deviation_surrogate_count = deviation_surrogate_count,
+        ))
+    end
 
     if (errw <= tolerW) 
-          Lconv = true
-
-          break
+          if used_deviation_surrogate
+              throw(last_deviation_error)
+          end
+          # Solve the requested deviation to a consistent weight first,
+          # then enforce the unchanged temperature/thrust limits. Never
+          # substitute a different mission for this final feasibility check.
+          if resolve_deviation_boundary && deviation_requested &&
+             !allow_deviation_t4_violation
+              WTO_check = parm[imWTO]
+              calculate_cruise_altitude_or_CL!(opt_prescribed_cruise_parameter, WMTO, ac, imission)
+              time_propsys += _mission_iteration!(
+                  ac, imission, false;
+                  calculate_cruise = true,
+            integration_cache=integration_cache, integration_rtol=integration_rtol, integration_max_step=integration_max_step,
+                  allow_deviation_t4_violation = false,
+              )
+              errw = max(errw, abs(parm[imWTO] - WTO_check) /
+                               max(abs(parm[imWTO]), 1.0))
+          end
+          if errw <= tolerW
+              Lconv = true
+              break
+          end
     end
 
 #-----------------------------------------------------------------
@@ -335,8 +454,28 @@ function calculate_cruise_altitude_or_CL!(opt_prescribed_cruise_parameter, WMTO,
     S = wing.layout.S
 
     if compare_strings(opt_prescribed_cruise_parameter, "altitude")
+        Mach = para[iaMach, ip]
+        alt_m = para[iaalt, ip]
+        atmos_state = atmos(alt_m, ΔTatmos)
+        pare[iep0, ip] = atmos_state.p
+        pare[ieT0, ip] = atmos_state.T
+        pare[iea0, ip] = atmos_state.a
+        pare[ierho0, ip] = atmos_state.ρ
+        pare[iemu0, ip] = atmos_state.μ
+        pare[ieM0, ip] = Mach
+        pare[ieu0, ip] = Mach * atmos_state.a
+        para[iaReunit, ip] = pare[ieu0, ip] * atmos_state.ρ / atmos_state.μ
+
+        ρ0 = pare[ierho0, ip]
+        ρcab = max(parg[igpcabin], pare[iep0, ip]) / (RSL * TSL)
+        WbuoyCR = (ρcab - ρ0) * gee * parg[igcabVol]
+        u0 = pare[ieu0, ip]
+        BW = We + WbuoyCR
+
         CL = BW / (0.5*ρ0*u0^2*S) #Find CL from L=W
         para[iaCL, ipclimb1+1:ipdescentn-1] .= CL #Store CL in climb, cruise and descent phases
+        fuselage_drag!(fuse, parm, para, ipcruise1)
+        broadcast_fuselage_drag!(para, ipcruise1)
     
     elseif compare_strings(opt_prescribed_cruise_parameter, "CL")
         CL = para[iaCL, ip]

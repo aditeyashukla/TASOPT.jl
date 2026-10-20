@@ -145,8 +145,8 @@ function takeoff!(ac; imission=1, printTO = true)
         parm[imlBF] = lBF
         parm[imtTO] = tTO
         parm[imFTO] = FTO
-        parm[imgamVTO] = asin[singTO]
-        parm[imgamVBF] = asin[singBF]
+        parm[imgamVTO] = asin(singTO)
+        parm[imgamVBF] = asin(singBF)
 
         return
     end
@@ -236,4 +236,3 @@ function takeoff!(ac; imission=1, printTO = true)
     println("         Continuing anyway...")
 
 end
-

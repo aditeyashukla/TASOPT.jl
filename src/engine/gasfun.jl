@@ -304,3 +304,18 @@ function get_thermo(
     #- - - - - - - - - - -
     return s1, h1, cp1, r1
 end  # function get_thermo
+
+# Same cp interpolation and arithmetic as get_thermo; omit unused h/s/log
+# when gassumd requests only cp for its existing finite difference.
+function gas_cp_exact(igas, temperature::Float64)
+    temperature < 0 && return gasfun(igas,temperature)[5]
+    gas = igas == 1 ? N2 : igas == 2 ? O2 : igas == 3 ? CO2 :
+          igas == 4 ? H2O : igas == 5 ? Ar : igas == 11 ? CH4 :
+          igas == 12 ? C2H6 : igas == 13 ? C3H8 : igas == 14 ? C4H10 :
+          igas == 18 ? C8H18 : igas == 24 ? C14H30 : igas == 40 ? H2 : nothing
+    gas === nothing && return gasfun(igas,temperature)[5]
+    i,im,dt,f=findsegment(temperature,gas.t)
+    A=1.0-f; cp=gas.cp;cpt=gas.cpt
+    return A * cp[im] + f * cp[i] +
+        f * A * (A * (dt * cpt[im] - cp[i] + cp[im]) - f * (dt * cpt[i] - cp[i] + cp[im]))
+end

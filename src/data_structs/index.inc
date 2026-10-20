@@ -35,7 +35,10 @@
       const imfexcdf = 33
       const imDeltaTatm = 34
       const imWfvent = 35
-      const imtotal = 35
+      const imDeviationDH = 36
+      const imDeviationDL = 37
+      const imDeviationStart = 38
+      const imtotal = 38
 
 #---- indices for geometry (airframe) variables and other sizing variables
       const igRange    =   1
@@ -179,7 +182,10 @@
       const igWfvent = 121
       const igWHXs = 122
       const igfeng = 123
-      const igtotal    = 123
+      const igJCO2 = 124
+      const igJNOx = 125
+      const igJSOx = 126
+      const igtotal    = 126
 
 #---- indices for aero variables at each mission point
       const iaalt     =  1
@@ -490,7 +496,7 @@
 
 #---- max number of blade rows allowed by ieepsc* and ieTmet* indices above
 # integer ncrowx
-ncrowx = ieTmet1 - ieepsc1
+const ncrowx = ieTmet1 - ieepsc1
 
 #---- indices for indexing mission points
       const ipstatic = 1
@@ -503,28 +509,28 @@ ncrowx = ieTmet1 - ieepsc1
       const ipclimb4 = 8
       const ipclimb5 = 9
       const ipcruise1 = 10
-      const ipcruise2 = 11
-      const ipdescent1 = 12
-      const ipdescent2 = 13
-      const ipdescent3 = 14
-      const ipdescent4 = 15
-      const ipdescent5 = 16
-      const iptest = 17
-
-      # generate label array programmatically from ip vars in TASOPT module namespace
-      # if it doesn't already exist
-      if !isdefined(@__MODULE__, :ip_labels)
-            names_with_ip = filter(n -> startswith(String(n), "ip"), names(@__MODULE__; all=true))
-            max_ip = maximum([getfield(@__MODULE__, n) for n in names_with_ip])
-            labels = Vector{String}(undef, max_ip)
-            for n in names_with_ip
-                  idx = getfield(@__MODULE__, n)
-                  labels[idx] = replace(String(n), "ip" => "")
-            end
-            const ip_labels = labels
-      end
+      const ipmaneuver1 = 11
+      const ipmaneuver2 = 12
+      const ipmaneuver3 = 13
+      const ipmaneuver4 = 14
+      const ipmaneuver5 = 15
+      const ipmaneuver6 = 16
+      const ipmaneuver7 = 17
+      const ipmaneuver8 = 18
+      # Legacy phase-entry aliases; complete ordered states are ipmaneuver1:ipmaneuver8.
+      const ipdeviation1 = ipmaneuver2
+      const ipdeviation2 = ipmaneuver4
+      const ipdeviation3 = ipmaneuver6
+      const ipdeviation4 = ipmaneuver8
+      const ipcruise2 = 19
+      const ipdescent1 = 20
+      const ipdescent2 = 21
+      const ipdescent3 = 22
+      const ipdescent4 = 23
+      const ipdescent5 = 24
+      const iptest = 25
+      const iptotal = 25
       
-      const iptotal = 17 
       const ipclimbn   = ipclimb5      # last climb   point
       const ipcruisen  = ipcruise2     # last cruise  point
       const ipdescentn = ipdescent5    # last descent point

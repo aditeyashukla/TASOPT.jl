@@ -182,6 +182,7 @@ function _size_aircraft!(ac; itermax=35,
     @inbounds for iterw = 1:itermax
         if iterw == itermax
             @warn "Reached max iterations in weight sizing loop!"
+            error("Failing for opti")
         end
 
         # Set relaxation factor
@@ -682,6 +683,8 @@ function _size_aircraft!(ac; itermax=35,
 
     end
 
+    Lconv && isfinite(errw) && errw <= tolerW || error("Design weight sizing did not converge")
+
     # normal takeoff and balanced-field takeoff calculations
     # set static thrust for takeoff routine
     ip = ipstatic
@@ -719,9 +722,11 @@ function _size_aircraft!(ac; itermax=35,
     balance_aircraft!(ac, imission, ip, rfuel, rpay, ξpay, opt_trim_var;
                         Ldebug = Ldebug)
 
-    #Check if all engine points have converged, warn if not
-    check_engine_convergence_failure(pare)
-    
+    #Check if all engine points have converged
+    if check_engine_convergence_failure(pare)
+        @warn "Some engine points did not converge"
+        error("Failing for opti")
+    end
     #Warn user if HX effectiveness is overwritten
     check_HX_overwriting(eng.heat_exchangers) 
 end
@@ -773,7 +778,7 @@ function update_WMTO!(ac, rlx)
            flgnose + flgmain + ftank + ftesys
 
     if (fsum >= 1.0)
-        @error "Something is wrong!! fsum ≥ 1.0"
+        error("fsum ≥ 1.0 in update_WMTO! — aircraft sizing is physically invalid")
     end
 
 end
@@ -813,7 +818,7 @@ function update_weights!(ac, rlx)
            flgnose + flgmain + ftank + ftesys
 
     if (fsum ≥ 1.0)
-        @error "SOMETHING IS WRONG fsum ≥ 1"
+        error("SOMETHING IS WRONG fsum ≥ 1")
     end
 
     # WMTO = rlx*(Wpay + Wfuse + Wtesys + Wftank)/(1.0-fsum) + (1.0-rlx)*WMTO

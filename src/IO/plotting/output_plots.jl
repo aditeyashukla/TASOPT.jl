@@ -35,7 +35,7 @@ function stickfig(ac::aircraft; plot_obj = nothing, label_fs = 16,
         bs = wing.layout.break_span
         b  = wing.layout.span
 
-        xax = wing.layout.spar_box_x_c
+        xax = 0.40
         xcLE = -xax
         xcTE = 1.0 - xax
 
@@ -1184,6 +1184,18 @@ function PayloadRange(ac_og::TASOPT.aircraft;
     scatter!(plot1, [design_range], [design_payload], 
              color=:blue, marker=:star5, ms=8, label="Design Point",
              legend=:bottomleft)
+
+    # Airport planning document line (payload-range)
+    apd_ranges_nmi = [0.0, 2050.0, 2935.0, 3600.0]
+    apd_payload_tons = [21319.0, 21319.0, 16692.19922, 0.0] ./ 1000.0
+    if plots_OEW
+        apd_payload_tons .+= Wempty / (9.81 * 1000)
+    end
+    plot!(plot1, apd_ranges_nmi, apd_payload_tons,
+        lw=2,
+        line=:dash,
+        color=:black,
+        label="Airport planning document")
 
     # PFEI plot
     plot2 = plot(ranges_nmi, PFEIsToPlot, 

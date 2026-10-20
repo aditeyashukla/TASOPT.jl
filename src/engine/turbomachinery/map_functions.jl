@@ -97,15 +97,15 @@ using a nonlinear solver with Jacobian information from interpolation gradients.
     - `dR_dw::Float64`: ∂R/∂Wc
     - `dR_dpr::Float64`: ∂R/∂PR
 """
-function find_NR_inverse_with_derivatives(itp_Wc::Interpolations.GriddedInterpolation, itp_PR::Interpolations.GriddedInterpolation, 
+function find_NR_inverse_unmemoized(itp_Wc::Interpolations.GriddedInterpolation, itp_PR::Interpolations.GriddedInterpolation, 
                                     Wc_target::Float64, PR_target::Float64; Ng::Float64 = 0.5, Rg::Float64 = 2.0)
     # Define the system of equations: 
     function residuals!(F::Vector{Float64}, x::Vector{Float64})
         x[1] = clamp(x[1], 1e-4, 1.9999) #Extrapolated speed map goes from 0 to 2.0
         x[2] = clamp(x[2], 1e-4, 3.9999) #Extrapolated Rline map goes from 0 to 4.0
         # Return the residuals for both equations
-        F[1] = itp_Wc(x...) - Wc_target 
-        F[2] = itp_PR(x...) - PR_target
+        F[1] = itp_Wc(x[1], x[2]) - Wc_target 
+        F[2] = itp_PR(x[1], x[2]) - PR_target
     end
 
     # Define the Jacobian of the system (partial derivatives)
@@ -141,8 +141,8 @@ function find_NR_inverse_with_derivatives(itp_Wc::Interpolations.GriddedInterpol
     jac_inv = inv(jac)
 
     # The derivatives of N, R with respect to Wc and PR are the components of the inverse Jacobian
-    dN_dw, dN_dpr = jac_inv[1, :]
-    dR_dw, dR_dpr = jac_inv[2, :]
+    dN_dw, dN_dpr = jac_inv[1, 1], jac_inv[1, 2]
+    dR_dw, dR_dpr = jac_inv[2, 1], jac_inv[2, 2]
 
     return N_found, R_found, dN_dw, dN_dpr, dR_dw, dR_dpr
 end
@@ -293,3 +293,32 @@ end
 #     df_dy = (itp(x, y + eps) - itp(x, y - eps)) / (2*eps)
 #     return df_dx, df_dy
 # end
+# Map objects are fixed for a candidate. Reset this process-local cache whenever
+# a candidate is installed. Initial guesses are part of the exact key.
+const FUEL_MAP_EXACT_CACHE = IdDict{Any,Any}()
+const FUEL_MAP_CACHE_COUNTS = zeros(Int,2)
+function find_NR_inverse_with_derivatives(itp_Wc::Interpolations.GriddedInterpolation,itp_PR::Interpolations.GriddedInterpolation,
+        Wc_target::Float64,PR_target::Float64;Ng::Float64=0.5,Rg::Float64=2.0)
+    pair=get(FUEL_MAP_EXACT_CACHE,itp_Wc,nothing)
+    if pair===nothing || pair[1] !== itp_PR
+        pair=(itp_PR,Dict{NTuple{4,Float64},NTuple{6,Float64}}())
+        FUEL_MAP_EXACT_CACHE[itp_Wc]=pair
+    end
+    # The identity dictionary spans different map types, but every stored
+    # cache has this exact type. Recover it before entering the engine hot path.
+    cache = pair[2]::Dict{NTuple{4,Float64},NTuple{6,Float64}}
+    fuel_map_lookup(cache,itp_Wc,itp_PR,Wc_target,PR_target,Ng,Rg)
+end
+function fuel_map_lookup(cache::Dict{NTuple{4,Float64},NTuple{6,Float64}},itp_Wc,itp_PR,Wc_target,PR_target,Ng,Rg)
+    key=(Wc_target,PR_target,Ng,Rg)
+    value=get(cache,key,nothing)
+    if value!==nothing
+        FUEL_MAP_CACHE_COUNTS[1]+=1
+        return value
+    end
+    FUEL_MAP_CACHE_COUNTS[2]+=1
+    value=find_NR_inverse_unmemoized(itp_Wc,itp_PR,Wc_target,PR_target;Ng,Rg)
+    length(cache)>=50000 && empty!(cache)
+    cache[key]=value
+    value
+end
